@@ -1,0 +1,99 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Finds the first traffic sources for each session, split by day",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key", "session_partition_key"],
+        labels: {
+          table_name: "ga4_sessions_traffic_sources_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with session_events as (
+  select  
+    client_key
+    , session_partition_key
+    , event_date_dt
+    , event_timestamp
+    , ev.event_source
+    , event_medium
+    , event_campaign
+    , event_content
+    , event_term
+    , sc.source_category
+  from
+    ${ref('stg_ga4_events')} ev
+    left join ${ref('source_categories')} sc on ev.event_source = sc.source
+  where
+    event_name != 'session_start'
+    and event_name != 'first_visit'
+    and event_date_dt >= event_date_checkpoint
+)
+, set_default_channel_grouping as (
+  select
+    *
+    , ${default_channel_grouping.channelGrouping('event_source', 'event_medium', 'source_category')} as default_channel_grouping
+  from
+    session_events
+)
+, first_session_source as (
+  select
+    client_key
+    , session_partition_key
+    , event_date_dt
+    , event_timestamp
+    , coalesce(first_value((case when event_source <> '(direct)' then event_source end) ignore nulls) over (session_window), '(direct)') as session_source
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(event_medium, '(none)') end) ignore nulls) over (session_window), '(none)') as session_medium
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(source_category, '(none)') end) ignore nulls) over (session_window), '(none)') as session_source_category
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(event_campaign, '(none)') end) ignore nulls) over (session_window), '(none)') as session_campaign
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(event_content, '(none)') end) ignore nulls) over (session_window), '(none)') as session_content
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(event_term, '(none)') end) ignore nulls) over (session_window), '(none)') as session_term
+    , coalesce(first_value((case when event_source <> '(direct)' then coalesce(default_channel_grouping, 'Direct') end) ignore nulls) over (session_window), 'Direct') as session_default_channel_grouping
+  from
+    set_default_channel_grouping
+  WINDOW session_window AS (PARTITION BY session_partition_key ORDER BY event_timestamp ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+
+)
+, find_non_direct_session_partition_key as (
+  select
+    *
+    , if(session_source <> '(direct)', session_partition_key, null) as non_direct_session_partition_key
+  from
+    first_session_source
+)
+
+select 
+  client_key
+  , session_partition_key
+  , event_date_dt
+  , session_source
+  , session_medium
+  , session_source_category
+  , session_campaign
+  , session_content
+  , session_term
+  , session_default_channel_grouping
+  , non_direct_session_partition_key
+  , min(event_timestamp) as session_partition_timestamp
+from
+  find_non_direct_session_partition_key
+group by all
+
+
+
+

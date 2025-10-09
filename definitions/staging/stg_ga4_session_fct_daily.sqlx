@@ -1,0 +1,48 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Produces session metrics, split by day",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_session_fct_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with event_totals as (
+    select
+        client_key
+        , session_key
+        , session_partition_key
+        , event_date_dt
+        , sum(is_page_view) as page_views
+        , sum(is_purchase) as purchases
+        , sum(is_entrance) as entrances
+        , count(distinct case when event_name = 'page_view' then page_location_clean else null end) as unique_page_views
+        , sum(engagement_time_msec) as total_engagement_time_msec
+        , ifnull(max(session_engaged), 0) as session_engaged
+        , if(ifnull(max(session_engaged), 0) = 0,1,0)  as session_bounced
+        , case when sum(is_page_view) >= 2 then 1 else 0 end as session_two_plus_pageviews
+    from
+        ${ref('stg_ga4_events')}
+    where
+        event_date_dt >= event_date_checkpoint
+    group by 1,2,3,4
+)
+
+select * from event_totals

@@ -1,0 +1,166 @@
+config {
+    type: "incremental",
+    schema: project_config.OUTPUT_DATASET,
+    description: "Page level table enriched with session data which aggregates common page metrics. Split by day.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["page_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_final_pages"
+        }
+    }
+}
+
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+-- Select all distinct pages from sessions (some sessions do not have pageviews so session vs page conversions totals do not match up)
+with base_select_pages as (
+    select
+        client_key
+        , session_key 
+        , session_partition_key
+        , event_date_dt
+        , page_path
+        , page_location
+        , page_location_clean
+        , page_hostname
+        , page_query_string
+        , page_key
+        -- Unnest pageview event properties with any_value to account for changing values (may update to last value)
+        ${helpers.anyValueUnnestUserProperties(project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
+        , sum(engagement_time_msec) as engagement_time_msec
+        , count(distinct case when event_name = 'page_view' then page_location_clean else null end) as unique_page_views
+    from
+        ${ref('stg_ga4_events')}
+    where
+        event_date_dt >= event_date_checkpoint
+    group by all
+)
+, add_pv_metrics as (
+    select 
+        be.client_key
+        , be.session_key 
+        , be.session_partition_key
+        , be.event_date_dt
+        , be.page_path
+        , be.page_location
+        , be.page_location_clean
+        , be.page_hostname
+        , be.page_query_string
+        , be.page_key
+        ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
+            `
+                ${helpers.userDefinedPropertiesOutput(false, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES, 'be')}
+            ` 
+            : ''}
+        , be.engagement_time_msec
+        , be.unique_page_views
+        , sum(pm.is_exit) as exits
+        , sum(pm.is_entrance) as entrances
+        , sum(pm.is_page_view) as pageviews
+    from
+        base_select_pages be
+    left join ${ref('stg_ga4_pages_daily')} pm using (session_partition_key, page_key)
+    where
+        be.event_date_dt >= event_date_checkpoint
+    group by all
+)
+, pages_conversions as (
+    select
+        *
+    from
+        ${ref('stg_ga4_pages_conversions_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_attribution as (
+    select
+        session_partition_key
+        , event_date_dt
+        , last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    from
+        ${ref('stg_ga4_session_traffic_sources_last_non_direct_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_bounce as (
+    select
+        event_date_dt
+        , session_partition_key
+        , session_bounced
+    from
+        ${ref('stg_ga4_session_fct_daily')}
+)
+
+select
+    pg.client_key
+    , pg.session_key 
+    , pg.session_partition_key
+    , pg.event_date_dt
+    , pg.page_path
+    , pg.page_location
+    , pg.page_location_clean
+    , pg.page_hostname
+    , pg.page_query_string
+    , pg.page_key
+    ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
+            ` , struct (
+                ${helpers.userDefinedPropertiesOutput(true, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
+            ) as custom_page_properties
+             
+            ` 
+            : ''}
+    , pg.exits
+    , pg.entrances
+    , pg.pageviews
+    , pg.unique_page_views
+    , pg.engagement_time_msec
+    , ifnull(sb.session_bounced, 0) as bounces
+    , struct (
+        ${helpers.conversionOutput(true, 'pc', project_config.CONVERSIONS)}
+    ) as page_conversions
+    , struct (
+        sa.last_non_direct_source
+        , sa.last_non_direct_medium
+        , sa.last_non_direct_source_category
+        , sa.last_non_direct_campaign
+        , sa.last_non_direct_content
+        , sa.last_non_direct_term
+        , sa.last_non_direct_default_channel_grouping
+        , sa.last_non_direct_traffic_type
+    ) as session_attribution
+
+from
+    add_pv_metrics pg
+left join pages_conversions pc
+    on pg.session_partition_key = pc.session_partition_key
+    and pg.page_key = pc.page_key
+left join session_attribution sa
+    on pg.session_partition_key = sa.session_partition_key
+    and pg.event_date_dt = sa.event_date_dt
+left join session_bounce sb
+    on pg.session_partition_key = sb.session_partition_key
+    and pg.event_date_dt = sb.event_date_dt
+
+
+
+

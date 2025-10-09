@@ -1,0 +1,146 @@
+config {
+    type: "incremental",
+    schema: project_config.OUTPUT_DATASET,
+    description: "Page level table which exposes page navigations. Enriched with session data, split by day",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["page_location_clean"],
+        labels: {
+          table_name: "ga4_final_pages_internal_navigation"
+        }
+    }
+}
+
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with pages as (
+    select
+        pm.client_key
+        , pm.session_key 
+        , pm.session_partition_key
+        , pm.event_date_dt
+        , pm.event_key
+        , pm.page_path
+        , pm.page_location
+        , pm.page_location_clean
+        , pm.page_title
+        , pm.page_hostname
+        , pm.page_query_string
+        , pm.page_key
+        , pm.page_engagement_key
+        , ${url_parsing.sanitiseURL('pm.previous_page')} as previous_page -- Clean up URLs
+        , ${url_parsing.sanitiseURL('pm.next_page')} as next_page 
+        , pm.is_entrance
+        , pm.is_exit
+        , pm.is_page_view
+        ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
+            `
+                ${helpers.userDefinedPropertiesOutput(false, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
+            ` 
+            : ''}
+    from 
+        ${ref('stg_ga4_pages_daily')} pm
+    where
+        event_date_dt >= event_date_checkpoint
+    group by all
+)
+, session_attribution as (
+    select
+        session_partition_key
+        , event_date_dt
+        , last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    from
+        ${ref('stg_ga4_session_traffic_sources_last_non_direct_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+
+, reagg as (
+    select
+        pm.event_date_dt
+        , pm.client_key
+        , pm.session_key 
+        , pm.session_partition_key
+        , pm.event_key
+        , pm.page_location_clean
+        , pm.page_title
+        , pm.previous_page
+        , pm.next_page
+        , sum(pm.is_entrance) as entrances
+        , sum(pm.is_page_view) as pageviews
+        , sum(pm.is_exit) as exits
+        ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
+            ` 
+                ${helpers.userDefinedPropertiesOutput(false, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
+
+             
+            ` 
+            : ''}
+        , last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    from
+        pages pm
+    left join session_attribution sa
+        on pm.session_partition_key = sa.session_partition_key
+        and pm.event_date_dt = sa.event_date_dt
+    group by all
+)
+
+select
+    event_date_dt
+    , client_key
+    , session_key 
+    , session_partition_key
+    , event_key
+    , page_location_clean
+    , page_title
+    , previous_page
+    , next_page
+    , entrances
+    , pageviews
+    , exits
+    ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
+            ` , struct (
+                ${helpers.userDefinedPropertiesOutput(true, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
+            ) as custom_page_properties
+             
+            ` 
+            : ''}
+    , struct (
+        last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    ) as session_attribution
+from
+    reagg
+

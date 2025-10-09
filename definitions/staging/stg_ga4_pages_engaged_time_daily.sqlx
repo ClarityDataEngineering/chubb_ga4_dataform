@@ -1,0 +1,70 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Produces daily total and unique counts of conversions per page",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["page_engagement_key"],
+        labels: {
+          table_name: "ga4_pages_engaged_time_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with pek_time as (
+    select
+        event_date_dt
+        , page_engagement_key
+        , sum(engagement_time_msec) as page_engagement_time
+    from
+        ${ref('stg_ga4_events')}
+    where
+        event_date_dt >= event_date_checkpoint
+    group by 1,2
+)
+, matched_pv as (
+    select
+        event_date_dt
+        , to_base64(md5(concat(session_key, original_page_location))) as page_engagement_key -- need to replace the pek with one that uses page_location to match back to correct page_view
+    from
+        ${ref('stg_ga4_events')}
+    where event_name = 'page_view'
+)
+, denominator as (
+    select
+        event_date_dt
+        , page_engagement_key
+        , count(page_engagement_key) as page_engagement_denominator
+    from 
+        matched_pv
+    where
+        event_date_dt >= event_date_checkpoint
+    group by 1,2
+)  
+
+select
+    dn.event_date_dt
+    , dn.page_engagement_key 
+    , case
+        when pk.page_engagement_time is null then null
+        else round(safe_divide(pk.page_engagement_time, dn.page_engagement_denominator), 2)
+    end as page_engagement_time_msec
+    , case
+        when pk.page_engagement_time is null then null
+        else dn.page_engagement_denominator
+    end as page_engagement_denominator
+from denominator dn
+left join pek_time pk using (page_engagement_key)

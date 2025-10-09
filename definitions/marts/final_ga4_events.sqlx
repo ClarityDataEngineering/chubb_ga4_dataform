@@ -1,0 +1,126 @@
+config {
+    type: "incremental",
+    schema: project_config.OUTPUT_DATASET,
+    description: "Wide and denormalised table, containing all event data. Enriched with session attributes and split by day.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_final_events"
+        }
+    }
+}
+
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+
+with events as (
+    select
+        * except (geo, device, event_params)
+        ${project_config.DERIVED_EVENT_PROPERTIES.length ? 
+            `
+                , struct(
+                    ${helpers.unnestUserDefinedProperties(true, project_config.DERIVED_EVENT_PROPERTIES)}
+                ) as custom_event_properties
+            ` 
+            : ''}
+        ${project_config.DERIVED_USER_PROPERTIES.length ? 
+            `
+                , struct(
+                    ${helpers.unnestUserDefinedProperties(true, project_config.DERIVED_EVENT_PROPERTIES)}
+                ) as custom_user_properties_unhydrated
+            ` 
+            : ''}
+        ${project_config.CONVERSIONS.length ? 
+            `
+                , struct(
+                    ${helpers.markEventAsConversion(true, project_config.CONVERSIONS)}
+                ) as conversions
+            ` 
+            : ''}
+    from
+        ${ref('stg_ga4_events')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, hydrate_user_properties as (
+    ${project_config.DERIVED_USER_PROPERTIES.length ? 
+            `
+            select
+                * except (custom_user_properties_unhydrated)
+                , struct(
+                    ${helpers.hydrateUserProperties(true, project_config.DERIVED_EVENT_PROPERTIES, 'custom_user_properties_unhydrated', 'session_partition_key', 'event_timestamp')}
+                ) as custom_user_properties
+            from 
+                events
+            ` 
+            : 'select * from events'}
+)
+,  session_data as (
+    select
+        * 
+    from 
+        ${ref('stg_ga4_session_dim_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, exit_page_key as (
+    select
+        event_date_dt
+        , event_key
+        , is_exit
+    from 
+        ${ref('stg_ga4_pages_daily')}
+    where
+        is_exit = 1
+        and event_date_dt >= event_date_checkpoint
+) 
+
+select
+    ev.*
+    , coalesce(ep.is_exit, 0) as is_exit
+    , struct(
+        sd.session_partition_start_timestamp
+        , sd.landing_page_path
+        , sd.landing_page
+        , sd.landing_page_clean
+        , sd.landing_page_hostname
+        , sd.landing_page_referrer
+        , sd.geo_continent
+        , sd.geo_country
+        , sd.geo_region
+        , sd.geo_city
+        , sd.geo_sub_continent
+        , sd.geo_metro
+        , sd.platform
+        , sd.device_category
+        , sd.device_mobile_brand_name
+        , sd.device_mobile_model_name
+        , sd.device_mobile_marketing_name
+        , sd.device_operating_system
+        , sd.device_operating_system_version
+        , sd.device_vendor_id
+        , sd.device_advertising_id
+        , sd.device_language
+        , sd.device_is_limited_ad_tracking
+        , sd.device_time_zone_offset_seconds
+        , sd.device_browser
+        , sd.device_web_info_browser
+        , sd.device_web_info_hostname
+    ) as session_data
+from
+    hydrate_user_properties ev
+left join session_data sd using (session_partition_key, event_date_dt)
+left join exit_page_key ep using (event_key, event_date_dt)

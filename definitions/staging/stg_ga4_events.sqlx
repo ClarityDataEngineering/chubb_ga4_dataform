@@ -1,0 +1,126 @@
+config {
+    type: "view",
+    schema: project_config.STAGING_DATASET,
+    description: "Contains cleaned event data that is enhanced with useful event and session keys",
+    bigquery: {
+        labels: {
+          table_name: "ga4_staging_events"
+        }
+    }
+}
+
+with base_events as (
+    select 
+        * 
+    from 
+        ${ref('init_events')}
+)
+-- Add key that captures a combination of stream_id and user_pseudo_id to uniquely identify a 'client' (aka. a device) within a single stream
+, include_client_key as (
+    select 
+        *
+        , to_base64(md5(concat(user_pseudo_id, stream_id))) as client_key
+    from 
+        base_events
+)
+-- Add key for sessions. session_key will be null if client_key is null due to consent being denied. ga_session_id may be null during audience trigger events. 
+, include_session_key as (
+    select
+        *
+        , to_base64(md5(CONCAT(client_key, CAST(ga_session_id as STRING)))) as session_key
+    from 
+        include_client_key
+)
+-- Add a key that combines session key and date. Useful when working with session table within date-partitioned tables
+, include_session_partition_key as (
+    select 
+        *
+        , CONCAT(session_key, CAST(event_date_dt as STRING)) as session_partition_key
+    from include_session_key
+    where session_key is not null -- remove null session keys (analytics_storage denied)
+)
+-- Add unique key for events 
+, include_event_key as (
+    select
+        *
+        , to_base64(md5(CONCAT(session_key, event_name, CAST(event_timestamp as STRING), to_json_string(event_params)))) as event_key
+    from
+        include_session_partition_key
+)
+, page_key as (
+    select
+        *
+        , (concat(cast(event_date_dt as string), page_location)) as page_key
+        , case
+            when event_name = 'page_view' then to_base64(md5(concat(session_key, page_referrer)))
+            else to_base64(md5(concat(session_key, page_location)))
+        end as page_engagement_key
+    from
+        include_event_key
+)
+-- Fix for mis-attributed ad traffic in the BQ export (change values based on client utms)
+, detect_gclid as (
+    select
+        * except (event_source, event_medium, event_campaign)
+        , case
+            when (page_location like '%gclid' and event_source is null) then "google"
+            else event_source
+        end as event_source
+        , case
+            when (page_location like '%gclid%' and event_medium is null) then "cpc"
+            when (page_location like '%gclid%' and event_medium = 'organic') then "cpc"
+            else event_medium
+        end as event_medium
+        , case
+            when (page_location like '%gclid%' and event_campaign is null) then "(cpc)"
+            when (page_location like '%gclid%' and event_campaign = 'organic') then "(cpc)"
+            when (page_location like '%gclid%' and event_campaign = '(organic)') then "(cpc)"
+            else event_campaign
+        end as event_campaign
+    from
+        page_key
+)
+
+${project_config.QUERY_PARAM_EXTRACTION.length ? `
+-- Conditional CTE if query extraction params have been defined in the project config
+, query_param_extraction as (
+    select
+        *
+        , ${url_parsing.extractQueryParameterValue('page_location', project_config.QUERY_PARAM_EXTRACTION)}
+    from
+        page_key
+)
+` : ''}
+-- Remove query params from URLs if defined in the config
+, remove_query_params as (
+    select
+        * except (page_location, page_referrer)
+        , page_location as original_page_location
+        , page_referrer as original_page_referrer
+        , ${url_parsing.sanitiseURL('page_location')} as page_location_clean
+        , ${url_parsing.extractPagePath('page_location')} as page_path
+        , ${project_config.QUERY_PARAM_EXCLUSION.length ? 
+            `
+                ${url_parsing.removeQueryParameters('page_location', project_config.QUERY_PARAM_EXCLUSION)} as page_location
+                , ${url_parsing.removeQueryParameters('page_referrer', project_config.QUERY_PARAM_EXCLUSION)} as page_referrer
+            ` 
+            : 'page_location \n, page_referrer'}
+    from
+        ${project_config.QUERY_PARAM_EXTRACTION.length ? `query_param_extraction` : `detect_gclid`}
+)
+, enrich_params as (
+    select
+        *
+        , ${url_parsing.extractURLHostname('page_location')} as page_hostname
+        , ${url_parsing.extractURLQueryString('page_location')} as page_query_string
+    from
+        remove_query_params
+)
+
+select * from enrich_params
+
+
+
+
+
+

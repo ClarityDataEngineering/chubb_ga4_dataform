@@ -1,0 +1,52 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Extracts all file download events and enriches with user defined event properties.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_stg_event_file_download"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with file_download as (
+    select
+        client_key
+        , session_key
+        , session_partition_key -- Leave session keys in so we can enrich and re-agg in final marts
+        , event_date_dt
+        , event_timestamp
+        , page_path
+        , page_location
+        , page_location_clean
+        , page_hostname
+        , page_query_string
+        , page_referrer
+        , page_key
+        , event_key
+        , event_name
+        ${helpers.unnestUserDefinedProperties(false, project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES)}
+    from 
+        ${ref('stg_ga4_events')}
+    where
+        event_name = 'file_download'
+    and 
+        event_date_dt >= event_date_checkpoint
+)
+
+select * from file_download

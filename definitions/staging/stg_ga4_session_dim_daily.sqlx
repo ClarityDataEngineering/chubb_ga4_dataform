@@ -1,0 +1,121 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Produces session dimensions, split by day",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_session_dim_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with event_dimensions as (
+    select
+        client_key
+        , session_key
+        , session_partition_key
+        -- Get the first session number to mitigate bug in export where there can be multiple within a session
+        , ga_session_number as ga_session_number
+        , event_date_dt
+        , event_timestamp
+        , page_path
+        , page_location
+        , page_location_clean
+        , page_hostname
+        , page_referrer
+        , geo.continent as geo_continent
+        , geo.country as geo_country
+        , geo.region as geo_region
+        , geo.city as geo_city 
+        , geo.sub_continent as geo_sub_continent
+        , geo.metro as geo_metro
+        , stream_id
+        , platform
+        , device.category as device_category
+        , device.mobile_brand_name as device_mobile_brand_name
+        , device.mobile_model_name as device_mobile_model_name
+        , device.mobile_marketing_name as device_mobile_marketing_name
+        , device.mobile_os_hardware_model as device_mobile_os_hardware_model
+        , device.operating_system as device_operating_system
+        , device.operating_system_version as device_operating_system_version
+        , device.vendor_id as device_vendor_id
+        , device.advertising_id as device_advertising_id
+        , device.language as device_language
+        , device.is_limited_ad_tracking as device_is_limited_ad_tracking
+        , device.time_zone_offset_seconds as device_time_zone_offset_seconds
+        , device.browser as device_browser
+        , device.web_info_browser as device_web_info_browser
+        , device.web_info_browser_version as device_web_info_browser_version
+        , device.web_info_hostname as device_web_info_hostname
+        , user_campaign
+        , user_medium
+        , user_source
+    from ${ref('stg_ga4_events')}
+    where event_name != 'first_visit' 
+    and event_name != 'session_start'
+    and event_date_dt >= event_date_checkpoint
+)
+, session_dimensions as (
+    select 
+        distinct
+            client_key
+            , session_key
+            , session_partition_key
+            , first_value(ga_session_number ignore nulls) over (session_partition_window) as ga_session_number
+            , event_date_dt
+            , stream_id
+            , first_value(event_timestamp ignore nulls) over (session_partition_window) as session_partition_start_timestamp
+            , first_value(page_path ignore nulls) over (session_partition_window) as landing_page_path
+            , first_value(page_location ignore nulls) over (session_partition_window) as landing_page
+            , first_value(page_location_clean ignore nulls) over (session_partition_window) as landing_page_clean
+            , first_value(page_hostname ignore nulls) over (session_partition_window) as landing_page_hostname
+            , first_value(page_referrer ignore nulls) over (session_partition_window) as landing_page_referrer
+            , first_value(geo_continent ignore nulls) over (session_partition_window) as geo_continent
+            , first_value(geo_country ignore nulls) over (session_partition_window) as geo_country
+            , first_value(geo_region ignore nulls) over (session_partition_window) as geo_region
+            , first_value(geo_city ignore nulls) over (session_partition_window) as geo_city
+            , first_value(geo_sub_continent ignore nulls) over (session_partition_window) as geo_sub_continent
+            , first_value(geo_metro ignore nulls) over (session_partition_window) as geo_metro
+            , first_value(platform ignore nulls) over (session_partition_window) as platform
+            , first_value(device_category ignore nulls) over (session_partition_window) as device_category
+            , first_value(device_mobile_brand_name ignore nulls) over (session_partition_window) as device_mobile_brand_name
+            , first_value(device_mobile_model_name ignore nulls) over (session_partition_window) as device_mobile_model_name
+            , first_value(device_mobile_marketing_name ignore nulls) over (session_partition_window) as device_mobile_marketing_name
+            , first_value(device_mobile_os_hardware_model ignore nulls) over (session_partition_window) as device_mobile_os_hardware_model
+            , first_value(device_operating_system ignore nulls) over (session_partition_window) as device_operating_system
+            , first_value(device_operating_system_version ignore nulls) over (session_partition_window) as device_operating_system_version
+            , first_value(device_vendor_id ignore nulls) over (session_partition_window) as device_vendor_id
+            , first_value(device_advertising_id ignore nulls) over (session_partition_window) as device_advertising_id
+            , first_value(device_language ignore nulls) over (session_partition_window) as device_language
+            , first_value(device_is_limited_ad_tracking ignore nulls) over (session_partition_window) as device_is_limited_ad_tracking
+            , first_value(device_time_zone_offset_seconds ignore nulls) over (session_partition_window) as device_time_zone_offset_seconds
+            , first_value(device_browser ignore nulls) over (session_partition_window) as device_browser
+            , first_value(device_web_info_browser ignore nulls) over (session_partition_window) as device_web_info_browser
+            , first_value(device_web_info_browser_version ignore nulls) over (session_partition_window) as device_web_info_browser_version
+            , first_value(device_web_info_hostname ignore nulls) over (session_partition_window) as device_web_info_hostname
+            , first_value(user_campaign ignore nulls) over (session_partition_window) as user_campaign
+            , first_value(user_medium ignore nulls) over (session_partition_window) as user_medium
+            , first_value(user_source ignore nulls) over (session_partition_window) as user_source
+        from
+            event_dimensions
+    WINDOW session_partition_window AS (PARTITION BY session_partition_key ORDER BY event_timestamp ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+)
+
+
+
+select * from session_dimensions

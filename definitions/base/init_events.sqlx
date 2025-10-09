@@ -1,0 +1,39 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Base model for GA4 events_* table. Basic column casting and value extractions are performed here.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["user_pseudo_id", "ga_session_id"],
+        labels: {
+          table_name: "ga4_base_incremental"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with source as (
+  select
+    ${base_select.baseSelect()}
+  from
+    ${ref('events_*')}
+  where
+    _table_suffix not like "%intraday%"
+    and _table_suffix not like "%fresh%"
+    and cast(_table_suffix as date format 'yyyymmdd') >= event_date_checkpoint
+)
+
+
+select * from source ${helpers.filterOutDomains()}

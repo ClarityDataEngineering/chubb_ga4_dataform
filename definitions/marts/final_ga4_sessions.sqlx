@@ -1,0 +1,126 @@
+config {
+    type: "incremental",
+    schema: project_config.OUTPUT_DATASET,
+    description: "Query-optimised daily session table that is partitioned on date. Enriched with dims and contains useful metrics.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["client_key, session_partition_key"],
+        labels: {
+          table_name: "ga4_final_sessions"
+        }
+    }
+}
+
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with session_dims as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_dim_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_attribution as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_traffic_sources_last_non_direct_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_conversions as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_conversions_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_fct as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_fct_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+
+select 
+    sd.client_key
+    , sd.session_key
+    , sd.session_partition_key
+    , sd.ga_session_number
+    , sd.event_date_dt
+    , sd.stream_id
+    , sd.session_partition_start_timestamp
+    , sd.landing_page_path
+    , sd.landing_page
+    , sd.landing_page_clean
+    , sd.landing_page_hostname
+    , sd.landing_page_referrer
+    , struct(
+        sd.geo_continent
+        , sd.geo_country
+        , sd.geo_region
+        , sd.geo_city
+        , sd.geo_sub_continent
+        , sd.geo_metro
+    ) as session_geo
+    , struct (
+        sd.platform
+        , sd.device_category
+        , sd.device_mobile_brand_name
+        , sd.device_mobile_model_name
+        , sd.device_mobile_marketing_name
+        , sd.device_operating_system
+        , sd.device_operating_system_version
+        , sd.device_vendor_id
+        , sd.device_advertising_id
+        , sd.device_language
+        , sd.device_is_limited_ad_tracking
+        , sd.device_time_zone_offset_seconds
+        , sd.device_browser
+        , sd.device_web_info_browser
+        , sd.device_web_info_browser_version
+        , sd.device_web_info_hostname
+    ) as session_device
+    , struct (
+        sa.last_non_direct_source
+        , sa.last_non_direct_medium
+        , sa.last_non_direct_source_category
+        , sa.last_non_direct_campaign
+        , sa.last_non_direct_content
+        , sa.last_non_direct_term
+        , sa.last_non_direct_default_channel_grouping
+        , sa.last_non_direct_traffic_type
+    ) as session_attribution
+    , struct (
+        ${helpers.conversionOutput(true, 'sc', project_config.CONVERSIONS)}
+    ) as session_conversions
+    , struct (
+        sm.page_views
+        , sm.purchases
+        , sm.unique_page_views
+        , sm.total_engagement_time_msec
+        , sm.session_engaged
+        , sm.session_bounced
+        , sm.session_two_plus_pageviews
+    ) as session_metrics
+from
+    session_dims sd
+left join session_attribution sa using (session_partition_key, event_date_dt)
+left join session_conversions sc using (session_partition_key, event_date_dt)
+left join session_fct sm using (session_partition_key, event_date_dt)

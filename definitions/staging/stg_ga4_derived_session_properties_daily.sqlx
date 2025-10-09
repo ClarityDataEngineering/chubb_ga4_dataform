@@ -1,0 +1,44 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Finds the last event parameter in a given session and assigns it to a session key",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["session_partition_key"],
+        labels: {
+          table_name: "ga4_session_properties_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with unnest_event_params as (
+    select
+      session_partition_key
+      , event_date_dt
+      , event_timestamp
+      ${helpers.unnestUserDefinedProperties(false, project_config.DERIVED_SESSION_PROPERTIES)}
+    from
+      ${ref('stg_ga4_events')}
+    where event_key is not null
+    and event_date_dt >= event_date_checkpoint
+)
+
+select distinct
+  session_partition_key
+  , event_date_dt
+  ${helpers.lastValueUserDefinedValue(project_config.DERIVED_SESSION_PROPERTIES, 'session_partition_key', 'event_timestamp')}
+from
+  unnest_event_params

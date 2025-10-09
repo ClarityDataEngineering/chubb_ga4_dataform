@@ -1,0 +1,145 @@
+config {
+    type: "incremental",
+    schema: project_config.OUTPUT_DATASET,
+    description: "Video event table enriched with session params.",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: ["page_location"],
+        labels: {
+          table_name: "ga4_final_event_video"
+        }
+    }
+}
+
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with video_events as (
+    select
+        client_key
+        , session_key
+        , session_partition_key
+        , event_date_dt
+        , event_name
+        , page_path
+        , page_location
+        , page_location_clean
+        , page_hostname
+        , page_query_string
+        , page_key
+        /** Manually output custom properties to coalese percent types **/
+        , video_title
+        , video_provider
+        , coalesce(video_percent_str, concat(safe_cast(video_percent_int as string), '%')) as video_percent
+        , countif(event_name = 'video_start') as video_start_total
+        , count(distinct if(event_name = 'video_start', event_name, null)) as video_start_unique
+        , countif(event_name = 'video_progress') as video_progress_total
+        , count(distinct if(event_name = 'video_progress', event_name, null)) as video_progress_unique
+        , countif(event_name = 'video_complete') as video_complete_total
+        , count(distinct if(event_name = 'video_complete', event_name, null)) as video_complete_unique
+    from
+        ${ref('stg_ga4_event_video')}
+    where
+        event_date_dt >= event_date_checkpoint
+    group by
+        all
+)
+, session_attribution as (
+    select
+        session_partition_key
+        , event_date_dt
+        , last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    from
+        ${ref('stg_ga4_session_traffic_sources_last_non_direct_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, reagg_by_day as (
+    select
+        vd.event_date_dt
+        , vd.event_name
+        , vd.page_path
+        , vd.page_location
+        , vd.page_location_clean
+        , vd.page_hostname
+        , vd.page_query_string
+        , vd.page_key
+        /** Manually output parameters **/
+        , vd.video_title
+        , vd.video_provider
+        , vd.video_percent
+        , sa.last_non_direct_source
+        , sa.last_non_direct_medium
+        , sa.last_non_direct_source_category
+        , sa.last_non_direct_campaign
+        , sa.last_non_direct_content
+        , sa.last_non_direct_term
+        , sa.last_non_direct_default_channel_grouping
+        , sa.last_non_direct_traffic_type
+        , sum(vd.video_start_total) video_start_total  --reagg totals
+        , sum(vd.video_start_unique) video_start_unique
+        , sum(vd.video_progress_total) video_progress_total  
+        , sum(vd.video_progress_unique) video_progress_unique
+        , sum(vd.video_complete_total) video_complete_total  
+        , sum(vd.video_complete_unique) video_complete_unique
+
+        from
+            video_events vd
+        left join session_attribution sa
+            on vd.session_partition_key = sa.session_partition_key
+            and vd.event_date_dt = sa.event_date_dt
+        group by all
+)
+
+
+select
+    event_date_dt
+    , event_name
+    , page_path
+    , page_location
+    , page_location_clean
+    , page_hostname
+    , page_query_string
+    , page_key
+    , struct (
+        video_title
+        , video_provider
+        , video_percent
+    ) as custom_event_properties
+    , struct (
+        last_non_direct_source
+        , last_non_direct_medium
+        , last_non_direct_source_category
+        , last_non_direct_campaign
+        , last_non_direct_content
+        , last_non_direct_term
+        , last_non_direct_default_channel_grouping
+        , last_non_direct_traffic_type
+    ) as session_attribution
+    , video_start_total
+    , video_start_unique
+    , video_progress_total
+    , video_progress_unique
+    , video_complete_total
+    , video_complete_unique
+
+from
+    reagg_by_day 
