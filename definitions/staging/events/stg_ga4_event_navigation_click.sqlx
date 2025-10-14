@@ -1,12 +1,12 @@
 config {
     type: "incremental",
     schema: project_config.STAGING_DATASET,
-    description: "Extracts all video events and enriches with user defined event properties.",
+    description: "Extracts all navigation click events and enriches with user defined event properties.",
     bigquery: {
         partitionBy: "event_date_dt",
         clusterBy: ["client_key, session_partition_key"],
         labels: {
-          table_name: "ga4_stg_event_video"
+          table_name: "ga4_stg_event_navigation_click"
         }
     }
 }
@@ -24,7 +24,7 @@ pre_operations {
   }
 }
 
-with video as (
+with navigation as (
     select
         client_key
         , session_key
@@ -40,15 +40,13 @@ with video as (
         , page_key
         , event_key
         , event_name
-        ${helpers.unnestUserDefinedProperties(false, project_config.VIDEO_DERIVED_EVENT_PROPERTIES)}
+        ${helpers.unnestUserDefinedProperties(false, project_config.NAVIGATION_DERIVED_EVENT_PROPERTIES)}
     from 
         ${ref('stg_ga4_events')}
     where
-        event_name = 'video_all'
-    and 
-        (select value.string_value from unnest(event_params) where key = 'video_action') in ('start', 'progress')
+        event_name = 'navigation'
     and 
         event_date_dt >= event_date_checkpoint
 )
 
-select * from video
+select * from navigation

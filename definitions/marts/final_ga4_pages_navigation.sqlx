@@ -74,6 +74,23 @@ with pages as (
         event_date_dt >= event_date_checkpoint
 )
 
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+
 , reagg as (
     select
         pm.event_date_dt
@@ -103,11 +120,28 @@ with pages as (
         , last_non_direct_term
         , last_non_direct_default_channel_grouping
         , last_non_direct_traffic_type
+        , scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+        , cg.session_calculated_geo.region as calc_region
+        , cg.session_calculated_geo.location as calc_location
     from
         pages pm
     left join session_attribution sa
         on pm.session_partition_key = sa.session_partition_key
         and pm.event_date_dt = sa.event_date_dt
+    left join session_campaign_properties scp
+        on pm.session_partition_key = scp.session_partition_key
+    left join chubb_session_calc_geo cg
+        on pm.session_partition_key = cg.session_partition_key
+        and pm.event_date_dt = cg.event_date_dt
     group by all
 )
 
@@ -141,6 +175,22 @@ select
         , last_non_direct_default_channel_grouping
         , last_non_direct_traffic_type
     ) as session_attribution
+    , struct (
+        utm_version
+        , business_line
+        , industry
+        , product_service
+        , location
+        , language
+        , campaign
+        , custom_1
+        , custom_2
+        , custom_3
+    ) as session_campaign_properties
+    , struct (
+        calc_region as region
+        , calc_location as location
+    ) as session_calculated_geo
 from
     reagg
 

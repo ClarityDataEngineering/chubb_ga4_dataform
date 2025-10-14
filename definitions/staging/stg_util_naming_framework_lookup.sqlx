@@ -1,0 +1,7 @@
+config {
+    type: "table",
+    description: "Create a table for the campaign properties lookup to avoid GSheets resource exhaustion.",
+    schema: project_config.STAGING_DATASET,
+}
+
+select * from ${ref(project_config.CAMPAIGN_PROPERTIES_LOOKUP_TABLE)}

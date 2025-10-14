@@ -1,0 +1,126 @@
+config {
+    type: "incremental",
+    schema: project_config.STAGING_DATASET,
+    description: "Calculates the country and region of a session, using UTM params as priority the GA country/region as fallback",
+    bigquery: {
+        partitionBy: "event_date_dt",
+        clusterBy: [" session_partition_key"],
+        labels: {
+          table_name: "ga4_session_aon_calculated_geo_daily"
+        }
+    }
+}
+
+pre_operations {
+  declare event_date_checkpoint default (
+    ${when(incremental(),
+      `select max(event_date_dt) -${project_config.STATIC_INCREMENTAL_DAYS} from ${self()}`,
+      `select cast('${project_config.START_DATE}' as date format 'yyyymmdd')`)
+    }
+  );
+
+  ${when(incremental(),
+    `delete from ${self()} where event_date_dt >= event_date_checkpoint`)
+  }
+}
+
+with country_map as (
+    select * from ${ref('iso_country_region_lookup')}
+)
+, geo_traffic_params as (
+    select
+        ga.event_date_dt
+        , ga.session_partition_key
+        , ga.geo_country as ga_country
+        , ga.geo_region as ga_region
+        , tp.params_renamed.location as utm_country
+        , tp.utm_country_shortcode as utm_country_shortcode
+    from 
+        ${ref('stg_ga4_session_dim_daily')} ga
+    left join ${ref('stg_ga4_derived_session_campaign_properties_daily')} tp using (session_partition_key, event_date_dt)
+    where
+        event_date_dt >= event_date_checkpoint
+)
+
+-- Grab the GA country from a session and get the region from the lookup table 
+, geo_extract as (
+    select
+        tp.session_partition_key
+        , any_value(tp.ga_country) as country
+        , any_value(cm.utm_country) as utm_country
+        , any_value(cm.chubb_region) as region
+    from
+        geo_traffic_params tp,
+        country_map cm
+    where
+        tp.ga_country = cm.ga_country
+    group by 
+        session_partition_key
+
+)
+, calculated_geo as (
+    select
+        tp.*
+        , struct(
+            -- Region calc - Returns the first non-null value in the below arguments else defaults to 'other' 
+            ifnull (
+                -- Grab the value from the geo extract lookup
+                ge.region
+                , "Other"
+            ) as region
+            -- Country calc - Returns the first non-null value in the below arguments else defaults to 'Unknown' 
+            , ifnull (
+                coalesce (
+                    if (
+                        -- If UTM shortcode is not null then lookup the country from the mapping table
+                        tp.utm_country_shortcode is not null 
+                        , (
+                            select
+                                ga_country
+                            from
+                                country_map
+                            where
+                                utm_country = utm_country_shortcode
+                        )
+                        , null
+                    )
+                    -- If UTM country returns null then return the country from the geo extract table 
+                    , ge.country
+                    -- Fallback to the default GA country 
+                    , tp.ga_country
+                )
+                , "Unknown"
+            ) as location
+        ) as session_calculated_geo
+    from
+        geo_traffic_params tp
+    left join geo_extract ge using (session_partition_key)
+)
+, rename_values as (
+    select
+        event_date_dt
+        , session_partition_key
+        , ga_country
+        , ga_region
+        , utm_country
+        , utm_country_shortcode
+        , session_calculated_geo.location
+        , session_calculated_geo.region
+    from
+        calculated_geo
+)
+
+select distinct
+    event_date_dt
+    , session_partition_key
+    , ga_country
+    , ga_region
+    , utm_country
+    , utm_country_shortcode
+    , struct (
+        region
+        , location
+    ) session_calculated_geo
+
+from rename_values
+

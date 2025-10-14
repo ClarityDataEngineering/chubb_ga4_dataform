@@ -30,7 +30,8 @@ with base as (
         , event_date_dt
         , page_key
         -- Extract user-defined conversions defined in the config
-         ${helpers.conversionCount(project_config.CONVERSIONS)}
+        -- replace helper with chubb conversions
+        ${custom_conversions.chubbConversionsTotalUnique()} 
     from
         ${ref('stg_ga4_events')}
     where event_date_dt >= event_date_checkpoint

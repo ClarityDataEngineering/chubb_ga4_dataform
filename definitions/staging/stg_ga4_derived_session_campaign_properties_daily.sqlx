@@ -42,91 +42,32 @@ with session_utms as (
   select
     *
     , CASE 
-        -- Version c - Jan 2024
-      WHEN regexp_contains(campaign, r'(?i)^(c)_([^_]*)_([a-z0-9]{2})_([a-z0-9]{2})_([a-z0-9]{3})_([a-z0-9]{3})_([^_]*)$') THEN
+        -- Version A - October 2025
+      WHEN regexp_contains(campaign, r'(?i)^(a)_([a-z0-9]{1})_([a-z0-9]{2})_([a-z0-9]{2})_([a-z0-9]{2})_([a-z0-9]{2})_([^_]*)$') THEN
         STRUCT  (
           NULLIF(SPLIT(campaign, "_") [safe_offset(0)], "") as utm_version,
-          null as aon_story, 
-          NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as campaign,
-          null as topic,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as industry,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as solution,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as growth_priority,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as region,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(2)], "") as country,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as business_line,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(2)], "") as industry,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as product_service,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as location,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as language,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(7)], "") as campaign,
 
-          -- UTM Content Parse 
-          NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as funnel_stage,
-          NULLIF(SPLIT(content, "_") [safe_offset(1)], "") as signature_insights,
-          null as objective,
-
-          -- Custom Fields
-          NULLIF(SPLIT(term, "_") [safe_offset(0)], "") as custom_1,
-          NULLIF(SPLIT(term, "_") [safe_offset(1)], "") as custom_2,
-          NULLIF(SPLIT(term, "_") [safe_offset(2)], "") as custom_3
-        )
-        -- Version A - June 2023
-      WHEN regexp_contains(campaign, r'(?i)^(a|b)_(\d{1})_([a-z0-9]{2})_([^_]*)_([a-z0-9]{3})_([a-z0-9]{3})_([^_]*)_([^_]*)_([a-z0-9]{2})$') THEN
-        STRUCT  (
-          NULLIF(SPLIT(campaign, "_") [safe_offset(0)], "") as utm_version,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as aon_story,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(2)], "") as campaign,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as topic,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as industry,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as solution,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as growth_priority,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(7)], "") as region,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(8)], "") as country,
-
-
-          -- UTM Content Parse 
-          NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as funnel_stage,
-          NULLIF(SPLIT(content, "_") [safe_offset(1)], "") as signature_insights,
-          NULLIF(SPLIT(content, "_") [safe_offset(2)], "") as objective,
-
-          -- Custom Fields
-          NULLIF(SPLIT(term, "_") [safe_offset(0)], "") as custom_1,
-          NULLIF(SPLIT(term, "_") [safe_offset(1)], "") as custom_2,
-          NULLIF(SPLIT(term, "_") [safe_offset(2)], "") as custom_3
-        )
-      -- Pre June 2023
-      WHEN regexp_contains(campaign, r'(?i)^(\d{1})_([a-z0-9]{2})_([^_]+)_([a-z0-9]{3})_([a-z0-9]{3})_([^_]+)_([a-z0-9]{2})$') THEN
-        STRUCT (
-          null as utm_version,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(0)], "") as aon_story,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as campaign,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(2)], "") as topic,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as industry,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as solution,
-          null as growth_priority,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as region,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as country,
-
-          -- UTM Content Parse
-          NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as funnel_stage,
-          NULLIF(SPLIT(content, "_") [safe_offset(1)], "") as signature_insights,
-          NULLIF(SPLIT(content, "_") [safe_offset(2)], "") as objective,
-
-          -- Custom Fields
-          NULLIF(SPLIT(term, "_") [safe_offset(0)], "") as custom_1,
-          NULLIF(SPLIT(term, "_") [safe_offset(1)], "") as custom_2,
-          NULLIF(SPLIT(term, "_") [safe_offset(2)], "") as custom_3
+          -- UTM Content - Free Text Fields
+          NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as custom_1,
+          NULLIF(SPLIT(content, "_") [safe_offset(1)], "") as custom_2,
+          NULLIF(SPLIT(content, "_") [safe_offset(2)], "") as custom_3
         )
       -- Otherwise return nulls
       ELSE 
         STRUCT (
           null as utm_version,
-          null as aon_story,
-          null as campaign,
-          null as topic,
+          null as business_line,
           null as industry,
-          null as solution,
-          null as growth_priority,
-          null as region,
-          null as country,
-          null as funnel_stage,
-          null as signature_insights,
-          null as objective,
+          null as product_service,
+          null as location,
+          null as language,
+          null as campaign,
           null as custom_1,
           null as custom_2,
           null as custom_3
@@ -136,7 +77,7 @@ with session_utms as (
     session_utms
 )
 , lookup_values as (
-  select * from ${ref(project_config.CAMPAIGN_PROPERTIES_LOOKUP_TABLE)}
+  select * from ${ref('stg_util_naming_framework_lookup')}
 )
 , value_lookup as (
   select
@@ -152,23 +93,17 @@ with session_utms as (
     , value_lookup.session_partition_key
     , struct (
         value_lookup.params.utm_version
-        , aon_story_lookup as aon_story
-        , campaign_lookup as campaign
-        , topic_lookup as topic
+        , business_line_lookup as business_line
         , industry_lookup as industry
-        , solution_lookup as solution
-        , growth_priority_lookup as growth_priority
-        , value_lookup.params.region as region
-        , country_lookup as country
-        -- Account for older framework not using shortcodes. Pass through any value
-        , COALESCE(funnel_stage_lookup, value_lookup.params.funnel_stage) as funnel_stage
-        , COALESCE(signature_insights_lookup, REGEXP_REPLACE(value_lookup.params.signature_insights, r'-', ' ')) as signature_insights
-        , COALESCE(objective_lookup, REGEXP_REPLACE(value_lookup.params.objective, r'-', ' ')) as objective
+        , product_service_lookup as product_service
+        , location_lookup as location
+        , language_lookup as language
+        , campaign_lookup as campaign
         , value_lookup.params.custom_1 as custom_1
         , value_lookup.params.custom_2 as custom_2
         , value_lookup.params.custom_3 as custom_3
     ) as params_renamed
-    , value_lookup.params.country as utm_country_shortcode
+    , value_lookup.params.location as utm_country_shortcode
   from
     value_lookup
   where value_lookup.params.utm_version is not null -- remove null records 

@@ -46,7 +46,8 @@ with events as (
         ${project_config.CONVERSIONS.length ? 
             `
                 , struct(
-                    ${helpers.markEventAsConversion(true, project_config.CONVERSIONS)}
+                    -- Replace helper with chubb conversions
+                    ${custom_conversions.chubbConversionsTotal()} 
                 ) as conversions
             ` 
             : ''}
@@ -73,6 +74,22 @@ with events as (
         * 
     from 
         ${ref('stg_ga4_session_dim_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
     where
         event_date_dt >= event_date_checkpoint
 )
@@ -120,7 +137,25 @@ select
         , sd.device_web_info_browser
         , sd.device_web_info_hostname
     ) as session_data
+    , struct (
+        scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+    ) as session_campaign_properties
+    , struct (
+        cg.session_calculated_geo.region
+        , cg.session_calculated_geo.location
+    ) as session_calculated_geo
 from
     hydrate_user_properties ev
 left join session_data sd using (session_partition_key, event_date_dt)
+left join session_campaign_properties scp using (session_partition_key, event_date_dt)
+left join chubb_session_calc_geo cg using (session_partition_key, event_date_dt)
 left join exit_page_key ep using (event_key, event_date_dt)

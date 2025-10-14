@@ -1,12 +1,12 @@
 config {
     type: "incremental",
     schema: project_config.OUTPUT_DATASET,
-    description: "File Download event table enriched with session params.",
+    description: "CTA Click event table enriched with session params.",
     bigquery: {
         partitionBy: "event_date_dt",
         clusterBy: ["page_location"],
         labels: {
-          table_name: "ga4_final_event_file_download"
+          table_name: "ga4_final_event_cta_click"
         }
     }
 }
@@ -25,7 +25,7 @@ pre_operations {
   }
 }
 
-with file_download_events as (
+with click_events as (
     select
         client_key
         , session_key
@@ -37,15 +37,15 @@ with file_download_events as (
         , page_hostname
         , page_query_string
         , page_key
-        ${project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES.length ? 
+        ${project_config.CLICK_DERIVED_EVENT_PROPERTIES.length ? 
             `
-                ${helpers.userDefinedPropertiesOutput(false, project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES)}
+                ${helpers.userDefinedPropertiesOutput(false, project_config.CLICK_DERIVED_EVENT_PROPERTIES)}
             ` 
             : ''}
-        , countif(event_name = 'file_download') as file_download_total
-        , count(distinct if(event_name = 'file_download', event_name, null)) as file_download_unique
+        , countif(event_name = 'click') as cta_click_total
+        , count(distinct if(event_name = 'click', event_name, null)) as cta_click_unique
     from
-        ${ref('stg_ga4_event_file_download')}
+        ${ref('stg_ga4_event_cta_click')}
     where
         event_date_dt >= event_date_checkpoint
     group by
@@ -93,9 +93,9 @@ with file_download_events as (
         , se.page_hostname
         , se.page_query_string
         , se.page_key
-        ${project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES.length ? 
+        ${project_config.CLICK_DERIVED_EVENT_PROPERTIES.length ? 
                 ` 
-                    ${helpers.userDefinedPropertiesOutput(false, project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES)}
+                    ${helpers.userDefinedPropertiesOutput(false, project_config.CLICK_DERIVED_EVENT_PROPERTIES)}
                 
                 ` 
                 : ''}
@@ -119,11 +119,11 @@ with file_download_events as (
         , scp.params_renamed.custom_3
         , cg.session_calculated_geo.region as calc_region
         , cg.session_calculated_geo.location as calc_location
-        , sum(se.file_download_total) file_download_total  --reagg totals
-        , sum(se.file_download_unique) file_download_unique
+        , sum(se.cta_click_total) cta_click_total  --reagg totals
+        , sum(se.cta_click_unique) cta_click_unique
 
         from
-            file_download_events se
+            click_events se
         left join session_attribution sa
             on se.session_partition_key = sa.session_partition_key
             and se.event_date_dt = sa.event_date_dt
@@ -144,9 +144,9 @@ select
     , page_hostname
     , page_query_string
     , page_key
-    ${project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES.length ? 
+    ${project_config.CLICK_DERIVED_EVENT_PROPERTIES.length ? 
             ` , struct (
-                ${helpers.userDefinedPropertiesOutput(true, project_config.FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES)}
+                ${helpers.userDefinedPropertiesOutput(true, project_config.CLICK_DERIVED_EVENT_PROPERTIES)}
             ) as custom_event_properties
              
             ` 
@@ -177,8 +177,8 @@ select
         calc_region
         , calc_location
     ) as session_calculated_geo
-    , file_download_total
-    , file_download_unique
+    , cta_click_total
+    , cta_click_unique
 
 from
     reagg_by_day 

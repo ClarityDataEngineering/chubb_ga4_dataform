@@ -102,6 +102,22 @@ with base_select_pages as (
     where
         event_date_dt >= event_date_checkpoint
 )
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
 , session_bounce as (
     select
         event_date_dt
@@ -148,6 +164,22 @@ select
         , sa.last_non_direct_default_channel_grouping
         , sa.last_non_direct_traffic_type
     ) as session_attribution
+    , struct (
+        scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+    ) as session_campaign_properties
+    , struct (
+        cg.session_calculated_geo.region
+        , cg.session_calculated_geo.location
+    ) as session_calculated_geo
 
 from
     add_pv_metrics pg
@@ -157,10 +189,12 @@ left join pages_conversions pc
 left join session_attribution sa
     on pg.session_partition_key = sa.session_partition_key
     and pg.event_date_dt = sa.event_date_dt
+left join session_campaign_properties scp
+    on pg.session_partition_key = scp.session_partition_key
+    and pg.event_date_dt = scp.event_date_dt
+left join chubb_session_calc_geo cg
+    on pg.session_partition_key = cg.session_partition_key
+    and pg.event_date_dt = cg.event_date_dt
 left join session_bounce sb
     on pg.session_partition_key = sb.session_partition_key
     and pg.event_date_dt = sb.event_date_dt
-
-
-
-

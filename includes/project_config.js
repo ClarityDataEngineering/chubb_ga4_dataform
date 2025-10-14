@@ -3,7 +3,7 @@ const SOURCE_DATASET = "analytics_431849806" // the database containing the GA4 
 const SEEDS_DATASET = "raw_input" // the database containing the GA4 BigQuery data mapping seeds such as source categories 
 const STAGING_DATASET = "ga4_dataform_staging"
 const OUTPUT_DATASET = "ga4_dataform_output"
-const START_DATE = 20240101 // Earliest date to load 
+const START_DATE = 20250101 // Earliest date to load 
 const INCLUDE_INTRADAY = false
 const STATIC_INCREMENTAL_DAYS = 3 // Number of days to scan and reprocess on each run, default is 3 
 const SESSION_ATTRIBUTION_LOOKBACK_WINDOW = 30 // The last non-direct session attribution lookback window
@@ -14,17 +14,17 @@ const QUERY_PARAM_EXTRACTION = ["gclid"] // Add query parameters to be extracted
 /**
  * Use a regex string below remove any unwanted domains from your data
 */
-const DOMAIN_EXCLUSION = ""
+const DOMAIN_EXCLUSION = "(chubb-b70a-prod.adobecqms.net|c212.net)"
 /**
  * If the client uses a naming framework add configuration params below
  */
-const INCLUDE_CAMPAIGN_PROPERTIES = false
-const CAMPAIGN_PROPERTIES_LOOKUP_TABLE = ""
-const CAMPAIGN_PROPERTIES_LOOKUP = []
+const INCLUDE_CAMPAIGN_PROPERTIES = true
+const CAMPAIGN_PROPERTIES_LOOKUP_TABLE = "naming_framework_lookup"
+const CAMPAIGN_PROPERTIES_LOOKUP = ["business_line", "industry", "product_service", "location", "language", "campaign"]
 
-/* Specific event names can be specified as conversions */
+/* Specific event names can be specified as conversions -- note if using custom conversions add the outputted names here */
 const CONVERSIONS = [
-    'form_submit', 'video_start'
+    'form_submit', 'video_start', 'cta_click', 'file_download'
 ]
 
 
@@ -41,57 +41,83 @@ const DERIVED_SESSION_PROPERTIES = [
     { event_parameter:"custom", value_type:"string_value"}
 ]
 
-const DERIVED_USER_PROPERTIES = [
-    { event_parameter:"form_name", value_type:"string_value"}
-]
+const DERIVED_USER_PROPERTIES = []
 
 const DERIVED_EVENT_PROPERTIES = [
-    { event_parameter:"page_country", value_type:"string_value"},
-    { event_parameter:"page_language", value_type:"string_value"},
-    { event_parameter:"page_region", value_type:"string_value"},
-    { event_parameter:"page_content_type", value_type:"string_value"},
-    { event_parameter:"page_solution_line", value_type:"string_value"},
-    { event_parameter:"page_topic", value_type:"string_value"},
-    { event_parameter:"page_capability", value_type:"string_value"},
-    { event_parameter:"page_sub_topic", value_type:"string_value"},
-    { event_parameter:"page_industry", value_type:"string_value"},
-    { event_parameter:"page_product_service", value_type:"string_value"},
-    { event_parameter:"page_type", value_type:"string_value"},
-    { event_parameter:"page_type_group", value_type:"string_value"},
-    { event_parameter:"page_business_line", value_type:"string_value"},
-    { event_parameter:"form_type", value_type:"string_value"},
-    { event_parameter:"video_title", value_type:"string_value"},
-    { event_parameter:"video_percent", value_type:"string_value"},
-    { event_parameter:"filter_name", value_type:"string_value"},
-    { event_parameter:"link_url", value_type:"string_value"},
-    { event_parameter:"link_text", value_type:"string_value"},
-    { event_parameter:"title", value_type:"string_value"},
-    { event_parameter:"file_type", value_type:"string_value"},
-    { event_parameter:"file_name", value_type:"string_value"},
-    { event_parameter:"position", value_type:"int_value"},
-    { event_parameter:"scroll_depth", value_type:"string_value"},
-    { event_parameter:"percent_scrolled", value_type:"int_value"},
-    { event_parameter:"read_length", value_type:"int_value"},
-    { event_parameter:"page_load_time", value_type:"int_value"},
-    { event_parameter:"server_response_time", value_type:"int_value"},
-    { event_parameter:"dom_interactive_time", value_type:"int_value"},
-    { event_parameter:"content_load_time", value_type:"int_value"}
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"}
 ]
 
 const PAGE_VIEW_DERIVED_EVENT_PROPERTIES = [
-    { event_parameter:"page_country", value_type:"string_value"},
-    { event_parameter:"page_language", value_type:"string_value"},
-    { event_parameter:"page_region", value_type:"string_value"},
-    { event_parameter:"page_content_type", value_type:"string_value"},
-    { event_parameter:"page_solution_line", value_type:"string_value"},
-    { event_parameter:"page_topic", value_type:"string_value"},
-    { event_parameter:"page_capability", value_type:"string_value"},
-    { event_parameter:"page_sub_topic", value_type:"string_value"},
-    { event_parameter:"page_industry", value_type:"string_value"},
-    { event_parameter:"page_product_service", value_type:"string_value"},
-    { event_parameter:"page_type", value_type:"string_value"},
-    { event_parameter:"page_type_group", value_type:"string_value"},
-    { event_parameter:"page_business_line", value_type:"string_value"}
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"}
+]
+
+const FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"link_url", value_type:"string_value"},
+    { event_parameter:"link_text", value_type:"string_value"},
+    { event_parameter:"file_name", value_type:"string_value"}
+]
+
+const FORM_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"form_name", value_type:"string_value"},
+    { event_parameter:"form_type", value_type:"string_value"},
+    { event_parameter:"form_eventname", value_type:"string_value"}
+]
+
+const SCROLL_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"scroll_depth_percentage", value_type:"string_value"}
+]
+
+const VIDEO_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"video_title", value_type:"string_value"},
+    { event_parameter:"video_provider", value_type:"string_value"},
+    { event_parameter:"video_action", value_type:"string_value"},
+    { event_parameter:"video_progress", value_type:"string_value"}
+]
+
+const CLICK_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"event_linktype", value_type:"string_value"},
+    { event_parameter:"event_type", value_type:"string_value"},
+    { event_parameter:"event_linkurl", value_type:"string_value"},
+    { event_parameter:"event_label", value_type:"string_value"},
+    { event_parameter:"event_category", value_type:"string_value"},
+]
+
+const NAVIGATION_DERIVED_EVENT_PROPERTIES = [
+    { event_parameter:"country", value_type:"string_value"},
+    { event_parameter:"site_language", value_type:"string_value"},
+    { event_parameter:"business", value_type:"string_value"},
+    { event_parameter:"event_persona", value_type:"string_value"},
+    { event_parameter:"event_linktype", value_type:"string_value"},
+    { event_parameter:"event_type", value_type:"string_value"},
+    { event_parameter:"event_linkurl", value_type:"string_value"},
+    { event_parameter:"event_label", value_type:"string_value"},
+    { event_parameter:"event_category", value_type:"string_value"},
 ]
 
 module.exports = {
@@ -114,5 +140,11 @@ module.exports = {
     DERIVED_SESSION_PROPERTIES,
     DERIVED_USER_PROPERTIES,
     DERIVED_EVENT_PROPERTIES,
-    PAGE_VIEW_DERIVED_EVENT_PROPERTIES
+    PAGE_VIEW_DERIVED_EVENT_PROPERTIES,
+    FILE_DOWNLOAD_DERIVED_EVENT_PROPERTIES,
+    FORM_DERIVED_EVENT_PROPERTIES,
+    SCROLL_DERIVED_EVENT_PROPERTIES,
+    VIDEO_DERIVED_EVENT_PROPERTIES,
+    CLICK_DERIVED_EVENT_PROPERTIES,
+    NAVIGATION_DERIVED_EVENT_PROPERTIES
 }

@@ -29,7 +29,9 @@ with event_counts as (
     session_key
     , session_partition_key
     , event_date_dt
-    ${helpers.conversionCount(project_config.CONVERSIONS)}
+    -- Extract user-defined conversions defined in the config
+    -- Replace helper with chubb conversions
+    ${custom_conversions.chubbConversionsTotalUnique()} 
   from
     ${ref('stg_ga4_events')}
   where
