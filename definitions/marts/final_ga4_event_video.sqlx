@@ -38,16 +38,18 @@ with video_events as (
         , page_hostname
         , page_query_string
         , page_key
-        /** Manually output custom properties to coalese percent types **/
-        , video_title
-        , video_provider
-        , coalesce(video_percent_str, concat(safe_cast(video_percent_int as string), '%')) as video_percent
-        , countif(event_name = 'video_start') as video_start_total
-        , count(distinct if(event_name = 'video_start', event_name, null)) as video_start_unique
-        , countif(event_name = 'video_progress') as video_progress_total
-        , count(distinct if(event_name = 'video_progress', event_name, null)) as video_progress_unique
-        , countif(event_name = 'video_complete') as video_complete_total
-        , count(distinct if(event_name = 'video_complete', event_name, null)) as video_complete_unique
+        ${project_config.VIDEO_DERIVED_EVENT_PROPERTIES.length ? 
+            `
+                ${helpers.userDefinedPropertiesOutput(false, project_config.VIDEO_DERIVED_EVENT_PROPERTIES)}
+            ` 
+            : ''}
+        -- Use param video action to calculate totals 
+        , countif(video_action = 'start') as video_start_total
+        , count(distinct if(video_action = 'start', video_action, null)) as video_start_unique
+        , countif(video_action = 'progress') as video_progress_total
+        , count(distinct if(video_action = 'progress', video_action, null)) as video_progress_unique
+        , countif(video_action = 'complete') as video_complete_total
+        , count(distinct if(video_action = 'complete', video_action, null)) as video_complete_unique
     from
         ${ref('stg_ga4_event_video')}
     where
@@ -72,6 +74,22 @@ with video_events as (
     where
         event_date_dt >= event_date_checkpoint
 )
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
 , reagg_by_day as (
     select
         vd.event_date_dt
@@ -82,10 +100,12 @@ with video_events as (
         , vd.page_hostname
         , vd.page_query_string
         , vd.page_key
-        /** Manually output parameters **/
-        , vd.video_title
-        , vd.video_provider
-        , vd.video_percent
+        ${project_config.VIDEO_DERIVED_EVENT_PROPERTIES.length ? 
+            ` 
+                ${helpers.userDefinedPropertiesOutput(false, project_config.VIDEO_DERIVED_EVENT_PROPERTIES)}
+            
+            ` 
+            : ''}
         , sa.last_non_direct_source
         , sa.last_non_direct_medium
         , sa.last_non_direct_source_category
@@ -94,6 +114,18 @@ with video_events as (
         , sa.last_non_direct_term
         , sa.last_non_direct_default_channel_grouping
         , sa.last_non_direct_traffic_type
+        , scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+        , cg.session_calculated_geo.region as calc_region
+        , cg.session_calculated_geo.location as calc_location
         , sum(vd.video_start_total) video_start_total  --reagg totals
         , sum(vd.video_start_unique) video_start_unique
         , sum(vd.video_progress_total) video_progress_total  
@@ -106,6 +138,11 @@ with video_events as (
         left join session_attribution sa
             on vd.session_partition_key = sa.session_partition_key
             and vd.event_date_dt = sa.event_date_dt
+        left join session_campaign_properties scp
+            on vd.session_partition_key = scp.session_partition_key
+        left join chubb_session_calc_geo cg
+            on vd.session_partition_key = cg.session_partition_key
+            and vd.event_date_dt = cg.event_date_dt
         group by all
 )
 
@@ -120,9 +157,12 @@ select
     , page_query_string
     , page_key
     , struct (
-        video_title
-        , video_provider
-        , video_percent
+        ${project_config.VIDEO_DERIVED_EVENT_PROPERTIES.length ? 
+            ` 
+                ${helpers.userDefinedPropertiesOutput(true, project_config.VIDEO_DERIVED_EVENT_PROPERTIES)}
+            
+            ` 
+            : ''}
     ) as custom_event_properties
     , struct (
         last_non_direct_source
@@ -134,6 +174,22 @@ select
         , last_non_direct_default_channel_grouping
         , last_non_direct_traffic_type
     ) as session_attribution
+    , struct (
+        utm_version
+        , business_line
+        , industry
+        , product_service
+        , location
+        , language
+        , campaign
+        , custom_1
+        , custom_2
+        , custom_3
+    ) as session_campaign_properties
+    , struct (
+        calc_region
+        , calc_location
+    ) as session_calculated_geo
     , video_start_total
     , video_start_unique
     , video_progress_total

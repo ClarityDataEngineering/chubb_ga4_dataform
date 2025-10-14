@@ -41,6 +41,22 @@ with session_dims as (
     where
         event_date_dt >= event_date_checkpoint
 )
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
 , session_conversions as (
     select
         *
@@ -108,6 +124,22 @@ select
         , sa.last_non_direct_traffic_type
     ) as session_attribution
     , struct (
+        scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+    ) as session_campaign_properties
+    , struct (
+        cg.session_calculated_geo.region
+        , cg.session_calculated_geo.location
+    ) as session_calculated_geo
+    , struct (
         ${helpers.conversionOutput(true, 'sc', project_config.CONVERSIONS)}
     ) as session_conversions
     , struct (
@@ -123,4 +155,6 @@ from
     session_dims sd
 left join session_attribution sa using (session_partition_key, event_date_dt)
 left join session_conversions sc using (session_partition_key, event_date_dt)
+left join session_campaign_properties scp using (session_partition_key, event_date_dt)
+left join chubb_session_calc_geo cg using (session_partition_key, event_date_dt)
 left join session_fct sm using (session_partition_key, event_date_dt)

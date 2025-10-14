@@ -1,5 +1,5 @@
-defaultProject: BQ_PROJECT
-defaultLocation: US
+defaultProject: chubb-analytics
+defaultLocation: EU
 defaultDataset: dataform
 defaultAssertionDataset: dataform_assertions
 dataformCoreVersion: 3.0.0-beta.4

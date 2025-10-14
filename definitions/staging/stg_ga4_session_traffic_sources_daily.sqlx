@@ -47,7 +47,7 @@ with session_events as (
 , set_default_channel_grouping as (
   select
     *
-    , ${default_channel_grouping.channelGrouping('event_source', 'event_medium', 'source_category')} as default_channel_grouping
+    , ${default_channel_grouping.channelGrouping('event_source', 'event_medium', 'source_category', 'event_campaign')} as default_channel_grouping
   from
     session_events
 )
@@ -93,7 +93,3 @@ select
 from
   find_non_direct_session_partition_key
 group by all
-
-
-
-

@@ -68,6 +68,22 @@ with scroll_events as (
     where
         event_date_dt >= event_date_checkpoint
 )
+, session_campaign_properties as (
+    select
+        *
+    from 
+        ${ref('stg_ga4_derived_session_campaign_properties_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
+, chubb_session_calc_geo as (
+    select
+        *
+    from
+        ${ref('stg_ga4_session_calculated_geo_daily')}
+    where
+        event_date_dt >= event_date_checkpoint
+)
 , reagg_by_day as (
     select
         se.event_date_dt
@@ -91,6 +107,18 @@ with scroll_events as (
         , sa.last_non_direct_term
         , sa.last_non_direct_default_channel_grouping
         , sa.last_non_direct_traffic_type
+        , scp.params_renamed.utm_version
+        , scp.params_renamed.business_line
+        , scp.params_renamed.industry
+        , scp.params_renamed.product_service
+        , scp.params_renamed.location
+        , scp.params_renamed.language
+        , scp.params_renamed.campaign
+        , scp.params_renamed.custom_1
+        , scp.params_renamed.custom_2
+        , scp.params_renamed.custom_3
+        , cg.session_calculated_geo.region as calc_region
+        , cg.session_calculated_geo.location as calc_location
         , sum(se.scroll_total) scroll_total  --reagg totals
         , sum(se.scroll_unique) scroll_unique
 
@@ -99,6 +127,12 @@ with scroll_events as (
         left join session_attribution sa
             on se.session_partition_key = sa.session_partition_key
             and se.event_date_dt = sa.event_date_dt
+        left join session_campaign_properties scp
+            on se.session_partition_key = scp.session_partition_key
+            and se.event_date_dt = scp.event_date_dt
+        left join chubb_session_calc_geo cg
+            on se.session_partition_key = cg.session_partition_key
+            and se.event_date_dt = cg.event_date_dt
         group by all
 )
 
@@ -128,6 +162,22 @@ select
         , last_non_direct_default_channel_grouping
         , last_non_direct_traffic_type
     ) as session_attribution
+    , struct (
+        utm_version
+        , business_line
+        , industry
+        , product_service
+        , location
+        , language
+        , campaign
+        , custom_1
+        , custom_2
+        , custom_3
+    ) as session_campaign_properties
+    , struct (
+        calc_region
+        , calc_location
+    ) as session_calculated_geo
     , scroll_total
     , scroll_unique
 

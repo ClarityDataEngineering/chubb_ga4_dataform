@@ -1,4 +1,4 @@
-function channelGrouping(source, medium, sourceCategory) {
+function channelGrouping(source, medium, sourceCategory, campaign) {
     return `case
 
                 when ${source} is null and ${medium} is null
@@ -6,82 +6,85 @@ function channelGrouping(source, medium, sourceCategory) {
                 when ${source} = '(direct)'
                     and ${medium} = '(none)' or ${medium} = '(not set)'
                     then 'Direct'
-                
-                when
-                    REGEXP_CONTAINS(${medium}, r"^paid-(discovery|instream|outstream|infeed|bumper|masthead|video|vod|banner)$")
-                    and REGEXP_CONTAINS(${source}, r"^(youtube|xaxis|sky-short-form|sky-advance|sky-sports|sky-news|peacock|ft|economist|ozone|wall-street-journal|new-york-times|bloomberg|bloomberg-green|miq|apple-news|le-point|les-echos|borse-am-sonntag|wiwo|handelsblatt|ariva|frankfurter-allgemeine|het-financieele-dagblad-bnr|faz|finecast)$")
-                    then 'Paid Video'
 
-                when ${medium} = 'org-video'
-                    and REGEXP_CONTAINS(${source}, r"^(youtube)$")
-                    then 'Video'
+                when REGEXP_CONTAINS(${campaign}, r"cross-network")
+                    then 'Cross-network'
                 
-                when ${medium} = 'paid-audio'
-                    then 'Paid Audio'
+                when (
+                    ${sourceCategory} = 'SOURCE_CATEGORY_SHOPPING'
+                    or REGEXP_CONTAINS(${campaign}, r"^(.*(([^a-df-z]|^)shop|shopping).*)$")
+                    )
+                    and REGEXP_CONTAINS(${medium},r"^(.*cp.*|ppc|retargeting|paid.*)$")
+                    then 'Paid Shopping'
                 
-                when ${medium} = 'org-audio'
-                    then 'Audio'
-
-                when REGEXP_CONTAINS(${medium}, r"^paid-(post|video|tweet|account)$")
-                    and REGEXP_CONTAINS(${source}, r"^(linkedin|facebook|instagram|twitter|facebook-instagram)$")
-                    then 'Paid Social'
-                
-                when REGEXP_CONTAINS(${medium}, r"^paid-(print|digital|post)$")
-                    then 'Paid Media'
-                
-                when REGEXP_CONTAINS(${medium}, r"^org-(print|digital)$")
-                    then 'Media'
-                
-                when REGEXP_CONTAINS(${medium}, r"^pdf|ppt|sell-sheet|placemat|infographic|brochure$")
-                    then 'Document'
-                
-                when ${medium} = 'organic'
-                    then 'Organic Search'
-                
-                when REGEXP_CONTAINS(${medium}, r"^(social|social-network|social-media|sm|social network|social media)$")
-                    or REGEXP_CONTAINS(${medium}, r"^org-(post|video|tweet)$")
-                    then 'Social'
-                
-                when ${medium} = 'email'
-                    or ${medium} = 'newsletter'
-                    or ${medium} = 'paid-email'
-                    or ${medium} = 'paid-newsletter'
-                    or ${source} = "outlook"
-                    then 'Email'
-
-                when REGEXP_CONTAINS(${medium}, r"affiliate|affiliates")
-                    then 'Affiliates'
-                
-                when ${medium} = 'referral'
-                    then 'Referral'
-                
-                when REGEXP_CONTAINS(${medium}, r"^(cpc|ppc|paidsearch)$")
-                    or REGEXP_CONTAINS(${medium}, r"^paid-(sem)$")
+                when ${sourceCategory} = 'SOURCE_CATEGORY_SEARCH'
+                    and REGEXP_CONTAINS(${medium}, r"^(.*cp.*|ppc|retargeting|paid.*)$")
                     then 'Paid Search'
                 
-                when REGEXP_CONTAINS(${medium}, r"^(display|cpm|banner)$")
-                    or REGEXP_CONTAINS(${medium}, r"^paid-(display-banner|display-video|audience|banner|video|overlay|website-banner|display|post)$")
-                    then 'Paid Display'
+                when ${sourceCategory} = 'SOURCE_CATEGORY_SOCIAL'
+                    and REGEXP_CONTAINS(${medium}, r"^(.*cp.*|ppc|retargeting|paid.*)$")
+                    then 'Paid Social'
 
-                when REGEXP_CONTAINS(${medium}, r"^(cpv|cpa|cpp|content-text)$")
-                    then 'Other Advertising'
+                when ${sourceCategory} = 'SOURCE_CATEGORY_VIDEO'
+                    and REGEXP_CONTAINS(${medium},r"^(.*cp.*|ppc|retargeting|paid.*)$") 
+                    or REGEXP_CONTAINS(${medium},r"^(pre_?roll|video_display|outstream|takeover_display)$") 
+                    then 'Paid Video'
+
+                when ${medium} in ('display', 'banner', 'expandable', 'interstitial', 'cpm')
+                    then 'Display'
                 
-                when REGEXP_CONTAINS(${source}, r"^virtual-event$")
-                    then 'Event'
+                when REGEXP_CONTAINS(${medium}, r"^(.*cp.*|ppc|retargeting|paid.*)$")
+                    then 'Paid Other'
                 
-                when ${medium} = 'press-release'
-                    then 'PR'
+                when ${sourceCategory} = 'SOURCE_CATEGORY_SHOPPING'
+                    or REGEXP_CONTAINS(${campaign}, r"^(.*(([^a-df-z]|^)shop|shopping).*)$")
+                    then 'Organic Shopping'
+                
+                when ${sourceCategory} = 'SOURCE_CATEGORY_SOCIAL'
+                    or ${medium} in ("social","social-network","social-media","sm","social network","social media")
+                    then 'Organic Social'
+                
+                when ${sourceCategory} = 'SOURCE_CATEGORY_VIDEO'
+                    or REGEXP_CONTAINS(${medium}, r"^(.*video.*)$")
+                    then 'Organic Video'
+                
+                when ${sourceCategory} = 'SOURCE_CATEGORY_SEARCH' or ${medium} = 'organic'
+                    then 'Organic Search'
+                
+                when ${medium} in ("referral", "app", "link")
+                    then 'Referral'
+                
+                when REGEXP_CONTAINS(${source}, r"email|e-mail|e_mail|e mail")
+                    or REGEXP_CONTAINS(${medium}, r"email|e-mail|e_mail|e mail")
+                    then 'Email'
+                
+                when ${medium} = 'affiliate'
+                    then 'Affiliates'
+                
+                when ${medium} = 'audio'
+                    then 'Audio'
+                
+                when ${source} = 'sms'
+                    or ${medium} = 'sms'
+                    then 'SMS'
+
+                when REGEXP_CONTAINS(${medium}, r"push$")
+                    or REGEXP_CONTAINS(${medium}, r"mobile|notification")
+                    or ${source} = 'firebase'
+                    then 'Mobile Push Notifications'
+
+                else 'Unassigned'    
+
             end`
 }
 
 function calculatedTrafficType(defaultChannelGroup) {
     return `
         CASE
-            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Organic Search') THEN 'Organic Search'
-            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Paid Search|Paid Social|Paid Media|Paid Display|Paid Video|Affiliates|Other Advertising') THEN 'Activated Paid'
-            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Social|Email|Event|Audio|Media|Document|Video|PR') THEN 'Activated Organic'
-            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Direct') THEN 'Direct'
-            ELSE 'Other'
+            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Organic Email|Direct|Referral|Organic Social|Organic Search|Social|Email|Organic Shopping') THEN 'Organic & Direct'
+            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Display|RSS|Paid Search|Content Advertising|Paid Email|Paid Search|Affiliates|Other Advertising|Paid Social|Paid Shopping|Cross-network') THEN 'Paid'
+            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Unassigned') THEN 'Other'
+            ELSE ${defaultChannelGroup}
         END
     `
 }

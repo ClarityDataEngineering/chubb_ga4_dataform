@@ -116,8 +116,25 @@ ${project_config.QUERY_PARAM_EXTRACTION.length ? `
     from
         remove_query_params
 )
+, limit_engagement_time as (
+    select
+        *
+        , case
+            when engagement_time_msec > 3600000 then 3600000 -- max 1 hour
+            else engagement_time_msec
+        end as limit_engagement_time_msec
+    from 
+        enrich_params
+)
+, replace_engagement_time as (
+    select
+        * except(engagement_time_msec)
+        , limit_engagement_time_msec as engagement_time_msec
+    from 
+        limit_engagement_time
+)
 
-select * from enrich_params
+select * from replace_engagement_time
 
 
 
