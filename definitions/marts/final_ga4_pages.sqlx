@@ -138,6 +138,7 @@ select
     , pg.page_hostname
     , pg.page_query_string
     , pg.page_key
+    , ${url_parsing.siteLocationByURL('pg.page_location_clean')}
     ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
             ` , struct (
                 ${helpers.userDefinedPropertiesOutput(true, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
