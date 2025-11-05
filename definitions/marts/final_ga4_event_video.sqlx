@@ -38,6 +38,7 @@ with video_events as (
         , page_hostname
         , page_query_string
         , page_key
+        , ${url_parsing.siteLocationByURL('page_location_clean')}
         ${project_config.VIDEO_DERIVED_EVENT_PROPERTIES.length ? 
             `
                 ${helpers.userDefinedPropertiesOutput(false, project_config.VIDEO_DERIVED_EVENT_PROPERTIES)}

@@ -37,6 +37,7 @@ with form_submit_events as (
         , page_hostname
         , page_query_string
         , page_key
+        , ${url_parsing.siteLocationByURL('page_location_clean')}
         ${project_config.FORM_DERIVED_EVENT_PROPERTIES.length ? 
             `
                 ${helpers.userDefinedPropertiesOutput(false, project_config.FORM_DERIVED_EVENT_PROPERTIES)}

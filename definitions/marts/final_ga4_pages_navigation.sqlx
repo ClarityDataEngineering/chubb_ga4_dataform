@@ -40,6 +40,7 @@ with pages as (
         , pm.page_query_string
         , pm.page_key
         , pm.page_engagement_key
+        , ${url_parsing.siteLocationByURL('pm.page_location_clean')}
         , ${url_parsing.sanitiseURL('pm.previous_page')} as previous_page -- Clean up URLs
         , ${url_parsing.sanitiseURL('pm.next_page')} as next_page 
         , pm.is_entrance

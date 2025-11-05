@@ -87,6 +87,7 @@ select
     , sd.landing_page_clean
     , sd.landing_page_hostname
     , sd.landing_page_referrer
+    , ${url_parsing.siteLocationByURL('sd.landing_page_clean')}
     , struct(
         sd.geo_continent
         , sd.geo_country
