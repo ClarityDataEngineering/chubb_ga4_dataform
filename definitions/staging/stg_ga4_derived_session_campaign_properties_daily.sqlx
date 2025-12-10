@@ -43,7 +43,7 @@ with session_utms as (
     *
     , CASE 
         -- Version A - October 2025
-      WHEN regexp_contains(campaign, r'(?i)^(a)_([a-z0-9]{1})_([a-z0-9]{2})_([a-z0-9]{2})_([a-z0-9]{2})_([a-z0-9]{2})_([^_]*)$') THEN
+      WHEN regexp_contains(campaign, r'(?i)^(a)_([a-z0-9]{1})_([a-z0-9]{2})?_([a-z0-9]{2})?_([a-z0-9]{2})_([a-z0-9]{2})_([^_]*)$') THEN
         STRUCT  (
           NULLIF(SPLIT(campaign, "_") [safe_offset(0)], "") as utm_version,
           NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as business_line,
@@ -51,7 +51,7 @@ with session_utms as (
           NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as product_service,
           NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as location,
           NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as language,
-          NULLIF(SPLIT(campaign, "_") [safe_offset(7)], "") as campaign,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as campaign,
 
           -- UTM Content - Free Text Fields
           NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as custom_1,
