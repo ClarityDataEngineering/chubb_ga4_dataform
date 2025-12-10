@@ -146,6 +146,7 @@ select
     , page_hostname
     , page_query_string
     , page_key
+    , ${url_parsing.siteLocationByURL('page_location_clean')}
     ${project_config.SCROLL_DERIVED_EVENT_PROPERTIES.length ? 
             ` , struct (
                 ${helpers.userDefinedPropertiesOutput(true, project_config.SCROLL_DERIVED_EVENT_PROPERTIES)}

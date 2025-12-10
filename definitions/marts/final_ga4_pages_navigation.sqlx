@@ -159,6 +159,7 @@ select
     , entrances
     , pageviews
     , exits
+    , ${url_parsing.siteLocationByURL('page_location_clean')}
     ${project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES.length ? 
             ` , struct (
                 ${helpers.userDefinedPropertiesOutput(true, project_config.PAGE_VIEW_DERIVED_EVENT_PROPERTIES)}
