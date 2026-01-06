@@ -122,6 +122,7 @@ with video_events as (
         , scp.params_renamed.location
         , scp.params_renamed.language
         , scp.params_renamed.campaign
+        , scp.params_renamed.objective
         , scp.params_renamed.custom_1
         , scp.params_renamed.custom_2
         , scp.params_renamed.custom_3
@@ -184,6 +185,7 @@ select
         , location
         , language
         , campaign
+        , objective
         , custom_1
         , custom_2
         , custom_3

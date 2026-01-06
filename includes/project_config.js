@@ -20,7 +20,7 @@ const DOMAIN_EXCLUSION = "(chubb-b70a-prod.adobecqms.net|c212.net)"
  */
 const INCLUDE_CAMPAIGN_PROPERTIES = true
 const CAMPAIGN_PROPERTIES_LOOKUP_TABLE = "naming_framework_lookup"
-const CAMPAIGN_PROPERTIES_LOOKUP = ["business_line", "industry", "product_service", "location", "language", "campaign"]
+const CAMPAIGN_PROPERTIES_LOOKUP = ["business_line", "industry", "product_service", "location", "language", "campaign", "objective"]
 
 /* Specific event names can be specified as conversions -- note if using custom conversions add the outputted names here */
 const CONVERSIONS = [
