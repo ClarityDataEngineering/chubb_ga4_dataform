@@ -41,7 +41,26 @@ with session_utms as (
 , traffic_params as (
   select
     *
+    
     , CASE 
+      -- Version B - January 2026
+      WHEN regexp_contains(campaign, r'(?i)^(b)_([a-z0-9]{1})_([a-z0-9]{2})?_([a-z0-9]{2})?_([a-z0-9]{2})_([a-z0-9]{2})_([^_]*)_([a-z0-9]{3})?$') THEN
+        STRUCT  (
+          NULLIF(SPLIT(campaign, "_") [safe_offset(0)], "") as utm_version,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(1)], "") as business_line,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(2)], "") as industry,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(3)], "") as product_service,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as location,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as language,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as campaign,
+          NULLIF(SPLIT(campaign, "_") [safe_offset(7)], "") as objective,
+
+          -- UTM Content - Free Text Fields
+          NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as custom_1,
+          NULLIF(SPLIT(content, "_") [safe_offset(1)], "") as custom_2,
+          NULLIF(SPLIT(content, "_") [safe_offset(2)], "") as custom_3
+        )
+
         -- Version A - October 2025
       WHEN regexp_contains(campaign, r'(?i)^(a)_([a-z0-9]{1})_([a-z0-9]{2})?_([a-z0-9]{2})?_([a-z0-9]{2})_([a-z0-9]{2})_([^_]*)$') THEN
         STRUCT  (
@@ -52,6 +71,7 @@ with session_utms as (
           NULLIF(SPLIT(campaign, "_") [safe_offset(4)], "") as location,
           NULLIF(SPLIT(campaign, "_") [safe_offset(5)], "") as language,
           NULLIF(SPLIT(campaign, "_") [safe_offset(6)], "") as campaign,
+          null as objective,
 
           -- UTM Content - Free Text Fields
           NULLIF(SPLIT(content, "_") [safe_offset(0)], "") as custom_1,
@@ -68,6 +88,7 @@ with session_utms as (
           null as location,
           null as language,
           null as campaign,
+          null as objective,
           null as custom_1,
           null as custom_2,
           null as custom_3
@@ -99,6 +120,7 @@ with session_utms as (
         , location_lookup as location
         , language_lookup as language
         , campaign_lookup as campaign
+        , objective_lookup as objective
         , value_lookup.params.custom_1 as custom_1
         , value_lookup.params.custom_2 as custom_2
         , value_lookup.params.custom_3 as custom_3
