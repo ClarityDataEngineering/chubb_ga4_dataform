@@ -64,6 +64,9 @@ function channelGrouping(source, medium, sourceCategory, campaign) {
                 when ${medium} = 'audio'
                     then 'Audio'
                 
+                when ${source} = 'event'
+                    then 'Event'
+                
                 when ${source} = 'sms'
                     or ${medium} = 'sms'
                     then 'SMS'
@@ -81,7 +84,7 @@ function channelGrouping(source, medium, sourceCategory, campaign) {
 function calculatedTrafficType(defaultChannelGroup) {
     return `
         CASE
-            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Organic Email|Direct|Referral|Organic Social|Organic Search|Social|Email|Organic Shopping') THEN 'Organic & Direct'
+            WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Organic Email|Direct|Referral|Organic Social|Organic Search|Social|Email|Organic Shopping|Event') THEN 'Organic & Direct'
             WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Display|RSS|Paid Search|Content Advertising|Paid Email|Paid Search|Affiliates|Other Advertising|Paid Social|Paid Shopping|Cross-network') THEN 'Paid'
             WHEN REGEXP_CONTAINS(${defaultChannelGroup}, r'Unassigned') THEN 'Other'
             ELSE ${defaultChannelGroup}
