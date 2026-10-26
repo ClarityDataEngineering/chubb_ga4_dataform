@@ -47,7 +47,9 @@ with last_non_direct_session_partition_key as (
     from
         ${ref('stg_ga4_session_traffic_sources_daily')}
     where 
-        event_date_dt >= event_date_checkpoint
+        -- Read the restatement window plus the full lookback period so the window
+        -- function has older sessions available to attribute back to
+        event_date_dt >= date_sub(event_date_checkpoint, interval ${project_config.SESSION_ATTRIBUTION_LOOKBACK_WINDOW} day)
 )
 , join_last_non_direct_session_source as (
     select
@@ -69,10 +71,23 @@ with last_non_direct_session_partition_key as (
         , coalesce(last_non_direct_source.session_content, '(none)') as last_non_direct_content
         , coalesce(last_non_direct_source.session_term, '(none)') as last_non_direct_term
         , coalesce(last_non_direct_source.session_default_channel_grouping, 'Direct') as last_non_direct_default_channel_grouping
-        , ${default_channel_grouping.calculatedTrafficType('last_non_direct_source.session_default_channel_grouping')} as last_non_direct_traffic_type
      from
         last_non_direct_session_partition_key
-    left join ${ref('stg_ga4_session_traffic_sources_daily')} last_non_direct_source on
+    -- Bound the lookup side to the same window: nothing older can be referenced,
+    -- so there is no reason to scan the full table
+    left join (
+        select
+            session_partition_key
+            , session_source
+            , session_medium
+            , session_source_category
+            , session_campaign
+            , session_content
+            , session_term
+            , session_default_channel_grouping
+        from ${ref('stg_ga4_session_traffic_sources_daily')}
+        where event_date_dt >= date_sub(event_date_checkpoint, interval ${project_config.SESSION_ATTRIBUTION_LOOKBACK_WINDOW} day)
+    ) last_non_direct_source on
         last_non_direct_session_partition_key.session_partition_key_last_non_direct = last_non_direct_source.session_partition_key
 )
 , add_traffic_type as (
@@ -100,4 +115,6 @@ with last_non_direct_session_partition_key as (
     join_last_non_direct_session_source
 )
 
+-- Write only the partitions the pre_operations delete removed, not the full read window
 select * from add_traffic_type
+where event_date_dt >= event_date_checkpoint
