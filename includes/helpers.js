@@ -28,7 +28,7 @@ function selectSourceCategories(){
  */
 
 function calculateLookbackRange(days) {
-  return days * 24 * 60 * 60 * 100000; 
+  return days * 24 * 60 * 60 * 1000000; 
 }
 
 /** 
